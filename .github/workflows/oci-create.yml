@@ -2,8 +2,6 @@ name: OCI ARM Instance Auto Create
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/15 * * * *'
 
 permissions:
   actions: write
@@ -69,5 +67,13 @@ jobs:
       - name: Created - disable schedule
         if: hashFiles('INSTANCE_CREATED') != ''
         run: gh workflow disable "${{ github.workflow }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Not created - self-trigger next attempt in ~5min
+        if: success() && hashFiles('INSTANCE_CREATED') == ''
+        run: |
+          sleep 240
+          gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ github.token }}
