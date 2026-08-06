@@ -83,10 +83,10 @@ jobs:
             id_rsa_private
           retention-days: 90
 
-      - name: Not created - self-trigger next attempt in ~75s
+      - name: Not created - self-trigger next attempt in ~2min
         if: success() && hashFiles('INSTANCE_CREATED') == ''
         run: |
-          sleep 40
+          sleep 90
           gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ github.token }}
