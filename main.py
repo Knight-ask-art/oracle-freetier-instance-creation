@@ -290,10 +290,15 @@ def handle_errors(command, data, log):
             time.sleep(WAIT_TIME)
             return True
         if data["code"] == "TooManyRequests":
-            rate_limit_backoff = min(rate_limit_backoff * 2, MAX_BACKOFF_SECS)
-            wait_secs = rate_limit_backoff + random.uniform(0, 60)
-            log.info("Rate limited. Backing off for %.0f seconds before retrying.", wait_secs)
-            time.sleep(wait_secs)
+            if MAX_ATTEMPTS:
+                wait_secs = 60 + random.uniform(0, 30)
+                log.info("Rate limited (single-shot mode). Waiting %.0f seconds.", wait_secs)
+                time.sleep(wait_secs)
+            else:
+                rate_limit_backoff = min(rate_limit_backoff * 2, MAX_BACKOFF_SECS)
+                wait_secs = rate_limit_backoff + random.uniform(0, 60)
+                log.info("Rate limited. Backing off for %.0f seconds before retrying.", wait_secs)
+                time.sleep(wait_secs)
             return True
 
     if "status" in data and data["status"] == 502:
