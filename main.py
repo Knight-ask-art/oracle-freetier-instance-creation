@@ -3,6 +3,7 @@ import itertools
 import json
 import logging
 import os
+import random
 import smtplib
 import sys
 import time
@@ -22,6 +23,9 @@ load_dotenv('oci.env')
 ARM_SHAPE = "VM.Standard.A1.Flex"
 E2_MICRO_SHAPE = "VM.Standard.E2.1.Micro"
 
+MAX_BACKOFF_SECS = 1800
+rate_limit_backoff = 300
+
 # Access loaded environment variables and strip white spaces
 OCI_CONFIG = os.getenv("OCI_CONFIG", "").strip()
 OCT_FREE_AD = os.getenv("OCT_FREE_AD", "").strip()
@@ -40,6 +44,7 @@ NOTIFY_EMAIL = os.getenv("NOTIFY_EMAIL", 'False').strip().lower() == 'true'
 EMAIL = os.getenv("EMAIL", "").strip()
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "").strip()
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "").strip()
+MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "0").strip())
 
 # Read the configuration from oci_config file
 config = configparser.ConfigParser()
@@ -275,13 +280,20 @@ def handle_errors(command, data, log):
         bool: True if the error is temporary and the operation should be retried after a delay.
         Raises Exception for unexpected errors.
     """
+    global rate_limit_backoff
 
     # Check for temporary errors that can be retried
     if "code" in data:
-        if (data["code"] in ("TooManyRequests", "Out of host capacity.", 'InternalError')) \
+        if (data["code"] in ("Out of host capacity.", 'InternalError')) \
                 or (data["message"] in ("Out of host capacity.", "Bad Gateway")):
             log.info("Command: %s--\nOutput: %s", command, data)
             time.sleep(WAIT_TIME)
+            return True
+        if data["code"] == "TooManyRequests":
+            rate_limit_backoff = min(rate_limit_backoff * 2, MAX_BACKOFF_SECS)
+            wait_secs = rate_limit_backoff + random.uniform(0, 60)
+            log.info("Rate limited. Backing off for %.0f seconds before retrying.", wait_secs)
+            time.sleep(wait_secs)
             return True
 
     if "status" in data and data["status"] == 502:
@@ -309,10 +321,12 @@ def execute_oci_command(client, method, *args, **kwargs):
     Raises:
         Exception: Raises an exception if an unexpected error occurs.
     """
+    global rate_limit_backoff
     while True:
         try:
             response = getattr(client, method)(*args, **kwargs)
             data = response.data if hasattr(response, "data") else response
+            rate_limit_backoff = WAIT_TIME
             return data
         except oci.exceptions.ServiceError as srv_err:
             data = {"status": srv_err.status,
@@ -430,7 +444,12 @@ def launch_instance():
     else:
         shape_config = oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=1)
 
+    attempt_count = 0
     while not instance_exist_flag:
+        attempt_count += 1
+        if MAX_ATTEMPTS and attempt_count > MAX_ATTEMPTS:
+            logging_step5.info("MAX_ATTEMPTS=%s reached for this run, exiting", MAX_ATTEMPTS)
+            sys.exit(0)
         try:
             launch_instance_response = compute_client.launch_instance(
                 launch_instance_details=oci.core.models.LaunchInstanceDetails(
@@ -439,6 +458,7 @@ def launch_instance():
                     create_vnic_details=oci.core.models.CreateVnicDetails(
                         assign_public_ip=assign_public_ip,
                         assign_private_dns_record=True,
+                        assign_ipv6_ip=True,
                         display_name=DISPLAY_NAME,
                         subnet_id=oci_subnet_id,
                     ),

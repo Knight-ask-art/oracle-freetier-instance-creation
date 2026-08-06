@@ -1,0 +1,66 @@
+name: OCI ARM Instance Auto Create
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: oci-arm-create
+  cancel-in-progress: false
+
+jobs:
+  try-create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Restore OCI credentials from secrets
+        run: |
+          echo "${{ secrets.OCI_CONFIG_B64 }}" | base64 -d > oci_config
+          echo "${{ secrets.OCI_API_KEY_PEM_B64 }}" | base64 -d > oci_api_private_key.pem
+          chmod 600 oci_api_private_key.pem
+          # fix key_file path for runner
+          sed -i "s|KEY_FILE_PLACEHOLDER|${GITHUB_WORKSPACE}/oci_api_private_key.pem|" oci_config
+          cat > oci.env <<EOF
+          OCI_CONFIG=${GITHUB_WORKSPACE}/oci_config
+          OCT_FREE_AD=AD-1
+          DISPLAY_NAME=my-arm-ubuntu-instance
+          OCI_COMPUTE_SHAPE=VM.Standard.A1.Flex
+          SECOND_MICRO_INSTANCE=False
+          REQUEST_WAIT_TIME_SECS=0
+          MAX_ATTEMPTS=1
+          SSH_AUTHORIZED_KEYS_FILE=${GITHUB_WORKSPACE}/id_rsa.pub
+          OCI_SUBNET_ID=ocid1.subnet.oc1.ca-montreal-1.aaaaaaaayvy6mgl2cyr7gnjcxi3pruoejv7k3dp4o6q5jsdouja6vvplletq
+          OCI_IMAGE_ID=ocid1.image.oc1.ca-montreal-1.aaaaaaaaygk54e6irhdiy7jvsxwxovdwvsitwwpk5ipq7ly63isuopz5eq2q
+          OPERATING_SYSTEM="Canonical Ubuntu"
+          OS_VERSION=24.04
+          ASSIGN_PUBLIC_IP=true
+          BOOT_VOLUME_SIZE=150
+          NOTIFY_EMAIL=True
+          EMAIL=${{ secrets.GMAIL_USER }}
+          EMAIL_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}
+          DISCORD_WEBHOOK=
+          EOF
+          echo "oci.env written"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run instance creation attempt
+        run: python main.py
+
+      - name: Created - disable schedule
+        if: hashFiles('INSTANCE_CREATED') != ''
+        run: gh workflow disable "${{ github.workflow }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
