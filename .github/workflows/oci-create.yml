@@ -84,7 +84,7 @@ jobs:
       - name: Not created - self-trigger next attempt in ~75s
         if: success() && hashFiles('INSTANCE_CREATED') == ''
         run: |
-          sleep 20
+          sleep 40
           gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ github.token }}
