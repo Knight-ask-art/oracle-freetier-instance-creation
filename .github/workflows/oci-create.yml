@@ -59,6 +59,13 @@ jobs:
       - name: Run instance creation attempt
         run: python main.py
 
+      - name: Show logs
+        if: always()
+        run: |
+          cat launch_instance.log 2>/dev/null || echo "(no launch log)"
+          cat setup_and_info.log 2>/dev/null | tail -5 || echo "(no setup log)"
+          if [ -f INSTANCE_CREATED ]; then echo "=== CREATED ==="; cat INSTANCE_CREATED; else echo "(not created yet)"; fi
+
       - name: Created - disable schedule
         if: hashFiles('INSTANCE_CREATED') != ''
         run: gh workflow disable "${{ github.workflow }}"
