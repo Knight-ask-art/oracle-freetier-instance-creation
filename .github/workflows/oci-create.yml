@@ -2,6 +2,8 @@ name: OCI ARM Instance Auto Create
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '7 * * * *'
 
 permissions:
   actions: write
