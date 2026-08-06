@@ -70,10 +70,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Not created - self-trigger next attempt in ~2min
+      - name: Upload SSH key + instance info (created only)
+        if: hashFiles('INSTANCE_CREATED') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: instance-ssh-key
+          path: |
+            INSTANCE_CREATED
+            id_rsa.pub
+            id_rsa_private
+          retention-days: 90
+
+      - name: Not created - self-trigger next attempt in ~75s
         if: success() && hashFiles('INSTANCE_CREATED') == ''
         run: |
-          sleep 90
+          sleep 20
           gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ github.token }}
