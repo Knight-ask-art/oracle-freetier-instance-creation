@@ -87,6 +87,10 @@ jobs:
         if: success() && hashFiles('INSTANCE_CREATED') == ''
         run: |
           sleep 90
-          gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}"
+          for i in 1 2 3; do
+            gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}" && { echo "next run triggered (attempt $i)"; break; }
+            echo "trigger failed (attempt $i), retrying in 20s..."
+            sleep 20
+          done
         env:
           GH_TOKEN: ${{ github.token }}
